@@ -1853,7 +1853,7 @@ class Scheduler(
         if torchprof_activities:
             self.torch_profiler = torch.profiler.profile(
                 activities=torchprof_activities,
-                with_stack=False,
+                with_stack=True,
                 record_shapes=True,
             )
             self.torch_profiler.start()
