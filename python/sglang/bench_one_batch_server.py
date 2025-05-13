@@ -8,6 +8,12 @@ Usage:
 python3 -m sglang.bench_one_batch_server --model meta-llama/Meta-Llama-3.1-8B --batch-size 1 16 64 --input-len 1024 --output-len 8
 
 python3 -m sglang.bench_one_batch_server --model None --base-url http://localhost:30000 --batch-size 16 --input-len 1024 --output-len 8
+
+
+
+python3 -m sglang.bench_one_batch_server --model None --base-url http://localhost:30000 --batch-size 1024 --input-len 1 --output-len 16
+python3 -m sglang.bench_one_batch_server --model None --base-url http://localhost:80 --batch-size 1 --input-len 1024 2048 4096 8192 16384 32768 --output-len 8
+
 """
 
 import argparse
@@ -36,6 +42,7 @@ class BenchArgs:
     result_filename: str = "result.jsonl"
     base_url: str = ""
     skip_warmup: bool = False
+    profile: bool=False
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser):
@@ -54,6 +61,7 @@ class BenchArgs:
         )
         parser.add_argument("--base-url", type=str, default=BenchArgs.base_url)
         parser.add_argument("--skip-warmup", action="store_true")
+        parser.add_argument("--profile", action="store_true")
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
@@ -101,25 +109,49 @@ def run_one_case(
     output_len: int,
     run_name: str,
     result_filename: str,
+    profile: bool
 ):
     input_ids = [
         [int(x) for x in np.random.randint(0, high=16384, size=(input_len,))]
         for _ in range(batch_size)
     ]
 
-    tic = time.time()
-    response = requests.post(
-        url + "/generate",
-        json={
-            "input_ids": input_ids,
-            "sampling_params": {
-                "temperature": 0,
-                "max_new_tokens": output_len,
-                "ignore_eos": True,
+    try:
+    # Start profiler
+        if profile:
+            print("Starting profiler...")
+            profile_response = requests.post(
+                url + "/start_profile"
+            )
+            if profile_response.status_code == 200:
+                print("Profiler started")
+        
+
+        tic = time.time()
+        response = requests.post(
+            url + "/generate",
+            json={
+                "input_ids": input_ids,
+                "sampling_params": {
+                    "temperature": 0,
+                    "max_new_tokens": output_len,
+                    "ignore_eos": True,
+                },
             },
-        },
-    )
-    latency = time.time() - tic
+        )
+        latency = time.time() - tic
+        
+        
+        # stop profiler
+        if profile:
+            print("Stopping profiler...")
+            profile_response = requests.post(url + "/stop_profile")
+            if profile_response.status_code == 200:
+                print("Profiler stopped")
+    
+    except Exception as e:
+        safe_exit = requests.post(url + "/stop_profile")
+        print(f"exiting after stop profiler, response status code: {safe_exit.status_code}")
 
     _ = response.json()
     output_throughput = batch_size * output_len / latency
@@ -159,6 +191,7 @@ def run_benchmark(server_args: ServerArgs, bench_args: BenchArgs):
             output_len=16,
             run_name="",
             result_filename="",
+            profile=False,
         )
 
     # benchmark
@@ -173,6 +206,7 @@ def run_benchmark(server_args: ServerArgs, bench_args: BenchArgs):
                 ol,
                 bench_args.run_name,
                 bench_args.result_filename,
+                bench_args.profile,
             )
     finally:
         if proc:

@@ -418,6 +418,7 @@ class Scheduler(
         self.profiler_activities: Optional[List[str]] = None
         self.profiler_id: Optional[str] = None
         self.profiler_target_forward_ct: Optional[int] = None
+        self.torch_profiler_running = False
 
         self.forward_sleep_time = None
 
@@ -641,7 +642,7 @@ class Scheduler(
             self.cur_batch = batch
 
             if batch:
-                result = self.run_batch(batch)
+                result = self.run_batch(batch, self.torch_profiler, self.torch_profiler_running)
                 self.process_batch_result(batch, result)
             else:
                 # When the server is idle, do self-check and re-init some states
@@ -1519,7 +1520,10 @@ class Scheduler(
         return batch
 
     def run_batch(
-        self, batch: ScheduleBatch
+        self, 
+        batch: ScheduleBatch,
+        profiler=None, 
+        profiler_running=False
     ) -> Union[GenerationBatchResult, EmbeddingBatchResult]:
         """Run a batch."""
         self.forward_ct += 1
@@ -1541,11 +1545,11 @@ class Scheduler(
                 model_worker_batch = batch.get_model_worker_batch()
                 if self.pp_group.is_last_rank:
                     logits_output, next_token_ids = (
-                        self.tp_worker.forward_batch_generation(model_worker_batch)
+                        self.tp_worker.forward_batch_generation(model_worker_batch, profiler=profiler, profiler_running=profiler_running)
                     )
                 else:
                     pp_hidden_states_proxy_tensors, _ = (
-                        self.tp_worker.forward_batch_generation(model_worker_batch)
+                        self.tp_worker.forward_batch_generation(model_worker_batch, profiler=profiler, profiler_running=profiler_running)
                     )
                 bid = model_worker_batch.bid
             else:
@@ -2068,12 +2072,19 @@ class Scheduler(
         ]
 
         if torchprof_activities:
+            decode_schedule = torch.profiler.schedule(
+                warmup=2,
+                active=5,
+                repeat=1,
+            )
             self.torch_profiler = torch.profiler.profile(
                 activities=torchprof_activities,
                 with_stack=with_stack if with_stack is not None else True,
                 record_shapes=record_shapes if record_shapes is not None else False,
+                schedule=decode_schedule,
             )
             self.torch_profiler.start()
+            self.torch_profiler_running = True
 
         if "MEM" in activities:
             torch.cuda.memory._record_memory_history(max_entries=100000)
@@ -2095,6 +2106,7 @@ class Scheduler(
         logger.info("Stop profiling...")
         if self.torch_profiler is not None:
             self.torch_profiler.stop()
+            self.torch_profiler_running = False
             self.torch_profiler.export_chrome_trace(
                 os.path.join(
                     self.torch_profiler_output_dir,

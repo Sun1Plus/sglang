@@ -184,6 +184,8 @@ class TpModelWorker:
         self,
         model_worker_batch: ModelWorkerBatch,
         skip_sample: bool = False,
+        profiler=None,
+        profiler_running=False,
     ) -> Tuple[Union[LogitsProcessorOutput, torch.Tensor], Optional[torch.Tensor]]:
         forward_batch = ForwardBatch.init_new(model_worker_batch, self.model_runner)
 
@@ -197,7 +199,7 @@ class TpModelWorker:
 
         if self.pp_group.is_last_rank:
             logits_output = self.model_runner.forward(
-                forward_batch, pp_proxy_tensors=pp_proxy_tensors
+                forward_batch, pp_proxy_tensors=pp_proxy_tensors, profiler=profiler, profiler_running=profiler_running
             )
             if model_worker_batch.launch_done is not None:
                 model_worker_batch.launch_done.set()
@@ -214,6 +216,8 @@ class TpModelWorker:
             pp_proxy_tensors = self.model_runner.forward(
                 forward_batch,
                 pp_proxy_tensors=pp_proxy_tensors,
+                profiler=profiler,
+                profiler_running=profiler_running
             )
             return pp_proxy_tensors.tensors, None
 

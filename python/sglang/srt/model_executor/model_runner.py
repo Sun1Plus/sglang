@@ -1084,6 +1084,8 @@ class ModelRunner:
         forward_batch: ForwardBatch,
         skip_attn_backend_init: bool = False,
         pp_proxy_tensors: Optional[PPProxyTensors] = None,
+        profiler=None,
+        profiler_running=False,
     ) -> Union[LogitsProcessorOutput, PPProxyTensors]:
         can_run_cuda_graph = bool(
             forward_batch.forward_mode.is_cuda_graph()
@@ -1098,6 +1100,8 @@ class ModelRunner:
             )
 
         if forward_batch.forward_mode.is_decode():
+            if profiler != None and profiler_running:
+                profiler.step()
             return self.forward_decode(forward_batch, pp_proxy_tensors=pp_proxy_tensors)
         elif forward_batch.forward_mode.is_extend():
             return self.forward_extend(
