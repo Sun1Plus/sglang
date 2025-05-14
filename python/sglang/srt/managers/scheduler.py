@@ -665,7 +665,7 @@ class Scheduler(
 
             if batch:
                 batch.launch_done = threading.Event()
-                result = self.run_batch(batch)
+                result = self.run_batch(batch, self.torch_profiler, self.torch_profiler_running)
                 self.result_queue.append((batch.copy(), result))
 
                 if self.last_batch is None:
@@ -2073,6 +2073,7 @@ class Scheduler(
 
         if torchprof_activities:
             decode_schedule = torch.profiler.schedule(
+                wait=0,
                 warmup=2,
                 active=5,
                 repeat=1,

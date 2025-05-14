@@ -146,7 +146,7 @@ class TpModelWorkerClient:
 
             # Run forward
             logits_output, next_token_ids = self.worker.forward_batch_generation(
-                model_worker_batch, profiler, profiler_running
+                model_worker_batch, profiler=profiler, profiler_running=profiler_running
             )
 
             # Update the future token ids map
