@@ -2073,9 +2073,9 @@ class Scheduler(
 
         if torchprof_activities:
             decode_schedule = torch.profiler.schedule(
-                wait=0,
-                warmup=2,
-                active=5,
+                wait=16,
+                warmup=32,
+                active=16,
                 repeat=1,
             )
             self.torch_profiler = torch.profiler.profile(
